@@ -1,0 +1,223 @@
+:toc:
+:toc-placement!:
+:toclevels: 2
+
+ifdef::env-github[]
+:tip-caption: :bulb:
+:note-caption: :information_source:
+:important-caption: :heavy_exclamation_mark:
+:caution-caption: :fire:
+:warning-caption: :warning:
+endif::[]
+
+
+Assorted tools for DKIM key management with a focus on AWS SES _Bring your Own DKIM_ (BYODKIM) key imports.
+
+
+toc::[]
+
+
+== Motivation
+
+The following notes were current as of June 2022.
+
+[quote, 'https://docs.aws.amazon.com/ses/latest/dg/send-email-authentication-dkim-bring-your-own.html[docs.aws.amazon.com]', Provide your own DKIM authentication token (BYODKIM) in Amazon SES]
+____
+As an alternative to using Easy DKIM, you can instead configure DKIM authentication by using your own public-private key pair. This process is known as Bring Your Own DKIM (BYODKIM).
+
+With BYODKIM, you can use a single DNS record to configure DKIM authentication for your domains, as opposed to Easy DKIM, which requires you to publish three separate DNS records. Additionally, with BYODKIM you can rotate the DKIM keys for your domains as often as you want.
+____
+
+The AWS SES BYODKIM process is unnecessarily complicated.
+
+Underlying validation errors from AWS SES are never presented to the user.  We are simply left to guess what might have gone wrong.
+
+_Was my private key correctly formatted?_ +
+_Was my public key correctly formatted?_ +
+_Do my published private and public keys belong to the same key pair?_ +
+_Is SES domain verification blocked on an internal AWS service problem?_
+
+As this section will go on to explain, the proper formatting of keys is far from trivial, and the wanton omission of any useful feedback from AWS SES only serves to exacerbate what is a tedious problem.
+
+**AWS SES does not accept RSA private keys in conventional https://en.wikipedia.org/wiki/Privacy-Enhanced_Mail[PEM format].**
+
+[quote]
+____
+You have to delete the first and last lines of the generated private key.  Additionally, you have to remove the line breaks in the generated private key.  The resulting value is a string of characters with no spaces or line breaks.
+____
+
+Every manual edit presents an opportunity for a typographical error.
+
+**AWS SES documentation is self-contradictory.**  Some articles strongly imply that SES requires PKCS#1 formatted RSA keys:
+
+[quote, 'https://docs.aws.amazon.com/ses/latest/dg/troubleshoot-dkim.html[docs.aws.amazon.com]', Troubleshooting DKIM problems in Amazon SES]
+____
+Make sure that your private key uses the right format.  The private key has to be in PKCS #1 format and use either 1024 or 2048 bit RSA encryption. Additionally, the private key has to be base64 encoded.
+____
+
+while other articles might imply otherwise:
+
+[quote, 'https://docs.aws.amazon.com/ses/latest/dg/send-email-authentication-dkim-bring-your-own.html#send-email-authentication-dkim-bring-your-own-configure-identity[docs.aws.amazon.com]', Configure and verify a domain to use BYODKIM]
+____
+`-----BEGIN PRIVATE KEY----- and -----END PRIVATE KEY-----`
+____
+
+The `PRIVATE KEY` PEM block type is from PKCS#8 -- not from PKCS#1.  (PKCS#1 used type `RSA PUBLIC KEY`.)  The underlying ASN.1 structures are not equivalent.  Further complicating matters is a change in OpenSSL behaviour:
+
+* https://www.openssl.org/docs/man1.1.1/man1/openssl-genrsa.html[`openssl-genrsa(1)`] in OpenSSL 1.1.1 generated output in PKCS#1 format.
+* https://www.openssl.org/docs/man3.0/man1/openssl-genrsa.html[`openssl-genrsa(1)`] in OpenSSL 3.0 (and later) generated output in PKCS#8 format by default.
+
+Blind experimentation would suggest that AWS SES does, in fact, expect an RSA private key in PKCS#1 `RSAPublicKey` format.  Attempting to present an RSA private key in PKCS#8 `PrivateKeyInfo` format will result in a silent failure.
+
+The DomainKeys Identified Mail (DKIM) specification (https://datatracker.ietf.org/doc/html/rfc4870[RFC 4870], https://datatracker.ietf.org/doc/html/rfc4871[4871], https://datatracker.ietf.org/doc/html/rfc6376[6376]) suffers from a similar problem.
+
+[quote, 'https://datatracker.ietf.org/doc/html/rfc6376#section-3.6.1[RFC 6376]', Section 3.6.1.  Textual Representation]
+____
+----
+k= Key type (plain-text; OPTIONAL, default is "rsa").  Signers and
+   Verifiers MUST support the "rsa" key type.  The "rsa" key type
+   indicates that an ASN.1 DER-encoded [ITU-X660-1997] RSAPublicKey
+   (see [RFC3447], Sections 3.1 and A.1.1) is being used in the "p="
+   tag.  (Note: the "p=" tag further encodes the value using the
+   base64 algorithm.)  Unrecognized key types MUST be ignored.
+
+   ABNF:
+
+   key-k-tag        = %x76 [FWS] "=" [FWS] key-k-tag-type
+   key-k-tag-type   = "rsa" / x-key-k-tag-type
+   x-key-k-tag-type = hyphenated-word   ; for future extension
+----
+____
+
+[quote, 'https://datatracker.ietf.org/doc/html/rfc6376#section-7.6[RFC 6376]', Section 7.6. DKIM Key Type Registry]
+____
+----
+The "k=" <key-k-tag> (specified in Section 3.6.1) and the "a=" <sig-
+a-tag-k> (specified in Section 3.5) tags provide for a list of
+mechanisms that can be used to decode a DKIM signature.
+
+IANA has established the "DKIM Key Type" registry for such
+mechanisms.
+
+                    +------+-----------+--------+
+                    | TYPE | REFERENCE | STATUS |
+                    +------+-----------+--------+
+                    |  rsa | [RFC3447] | active |
+                    +------+-----------+--------+
+
+           Table 6: DKIM Key Type Registry Updated Values
+----
+____
+
+Multiple direct references to RFC 3447 would strongly imply PKCS#1 `RSAPublicKey` format.
+
+[quote, 'https://datatracker.ietf.org/doc/html/rfc3447#appendix-A.1.1[RFC 3447]', Appendix A.1.1 RSA public key syntax]
+____
+----
+An RSA public key should be represented with the ASN.1 type
+RSAPublicKey:
+
+   RSAPublicKey ::= SEQUENCE {
+       modulus           INTEGER,  -- n
+       publicExponent    INTEGER   -- e
+   }
+
+The fields of type RSAPublicKey have the following meanings:
+
+ * modulus is the RSA modulus n.
+
+ * publicExponent is the RSA public exponent e.
+----
+____
+
+Yet if we skip ahead to the bottom of RFC 6376, we see something completely different.
+
+[quote, 'https://datatracker.ietf.org/doc/html/rfc6376#appendix-C[RFC 6376]', Appendix C.  Creating a Public Key (INFORMATIVE)]
+____
+----
+$ openssl rsa -in rsa.private -out rsa.public -pubout -outform PEM
+
+This results in the file rsa.public containing the key information
+similar to this:
+
+-----BEGIN PUBLIC KEY-----
+MIGfMA0GCSqGSIb3DQEBAQUAA4GNADCBiQKBgQDwIRP/UC3SBsEmGqZ9ZJW3/DkM
+oGeLnQg1fWn7/zYtIxN2SnFCjxOCKG9v3b4jYfcTNh5ijSsq631uBItLa7od+v/R
+tdC2UzJ1lWT947qR+Rcac2gbto/NMqJ0fzfVjH4OuKhitdY9tf6mcwGjaNBcWToI
+MmPSPDdQPNUYckcQ2QIDAQAB
+-----END PUBLIC KEY-----
+
+This public-key data (without the BEGIN and END tags) is placed in
+the DNS:
+
+$ORIGIN _domainkey.example.org.
+brisbane IN  TXT  ("v=DKIM1; p=MIGfMA0GCSqGSIb3DQEBAQUAA4GNADCBiQ"
+                   "KBgQDwIRP/UC3SBsEmGqZ9ZJW3/DkMoGeLnQg1fWn7/zYt"
+                   "IxN2SnFCjxOCKG9v3b4jYfcTNh5ijSsq631uBItLa7od+v"
+                   "/RtdC2UzJ1lWT947qR+Rcac2gbto/NMqJ0fzfVjH4OuKhi"
+                   "tdY9tf6mcwGjaNBcWToIMmPSPDdQPNUYckcQ2QIDAQAB")
+----
+____
+
+This is `SubjectPublicKeyInfo` from https://datatracker.ietf.org/doc/html/rfc5280#section-4.1[RFC 5280] -- not PKCS#1 `RSAPublicKey` format.
+
+----
+% cat key
+MIGfMA0GCSqGSIb3DQEBAQUAA4GNADCBiQKBgQDwIRP/UC3SBsEmGqZ9ZJW3/DkM
+oGeLnQg1fWn7/zYtIxN2SnFCjxOCKG9v3b4jYfcTNh5ijSsq631uBItLa7od+v/R
+tdC2UzJ1lWT947qR+Rcac2gbto/NMqJ0fzfVjH4OuKhitdY9tf6mcwGjaNBcWToI
+MmPSPDdQPNUYckcQ2QIDAQAB
+
+% openssl asn1parse -in key     
+    0:d=0  hl=3 l= 159 cons: SEQUENCE          
+    3:d=1  hl=2 l=  13 cons: SEQUENCE          
+    5:d=2  hl=2 l=   9 prim: OBJECT            :rsaEncryption
+   16:d=2  hl=2 l=   0 prim: NULL              
+   18:d=1  hl=3 l= 141 prim: BIT STRING        
+
+% openssl asn1parse -in key -strparse 18
+    0:d=0  hl=3 l= 137 cons: SEQUENCE          
+    3:d=1  hl=3 l= 129 prim: INTEGER           :F02113FF502DD206C1261AA67D6495B7FC390CA0678B9D08357D69FBFF362D2313764A71428F1382286F6FDDBE2361F713361E628D2B2AEB7D6E048B4B6BBA1DFAFFD1B5D0B65332759564FDE3BA91F9171A73681BB68FCD32A2747F37D58C7E0EB8A862B5D63DB5FEA67301A368D05C593A083263D23C37503CD518724710D9
+  135:d=1  hl=2 l=   3 prim: INTEGER           :010001
+----
+
+What a mess.
+
+tl;dr:
+
+* RSA public keys must be published to the DNS (`+_domainkey+`) in RFC 5280 `SubjectPublicKeyInfo` format.
+* RSA private keys must be supplied to AWS SES in PKCS#1 `RSAPrivateKey` format.  Newer releases of OpenSSL do not use this format by default.
+
+All of these usability problems could be trivially resolved.  SES should accept an RSA private key in conventional PEM format -- with headers.  PKCS#1 and PKCS#8 ASN.1 DER forms should be equally supported.  SES should parse and validate the encoded private key at time of input.  Any validation error must be immediately surfaced to the user.  If successful, SES should derive the RSA public key itself, and output the public key in a format suitable for a `_domainkey` resource record.  Output could be copied verbatim without any risk of a transcription or typographical error.  The result from the latest SES `_domainkey` RR poll should be surfaced in the AWS Console (and, preferably, the SES API).
+
+`dkim-key-fmt` implements much of the behaviour described in the previous paragraph.  As OpenSSL behaviour has been shown to change over time, we avoid OpenSSL for all key transformations (but tolerate keys generated by `openssl genrsa`).
+
+
+== Usage
+
+link:dkim-key-fmt/main.go[`dkim-key-fmt`] accepts an RSA private key in conventional PEM format and writes two output files:  the first is an alternative representation of the private key suitable for direct copy into the AWS SES BYODKIM user interface; the second is a representation of the public key suitable for direct copy to a `_domainkey` resource record.
+
+Private key input may be in PKCS#1 (`RSAPrivateKey`, PEM `RSA PUBLIC KEY`) or PKCS#8 (`PrivateKeyInfo`, PEM `PRIVATE KEY`) ASN.1 DER forms.
+
+Example:
+
+----
+% openssl genrsa -f4 -out private.key 1024
+
+% echo -e '3,12d\n3a\n...\n.\n1,$p' | ed -s private.key
+-----BEGIN PRIVATE KEY-----
+MIICdQIBADANBgkqhkiG9w0BAQEFAASCAl8wggJbAgEAAoGBAOO0X7ek4IVZP2pT
+fEc7DzWJPLhajJTVj6iylC5nXP8tmec43nC95Z4bsD9U+pSdf3ERAkAqk0L0Mp41
+...
+PWHqeWgOjr5uz3i3ItOwnvOGtj9pNShsKzEDRFvagqJzDrhBp1jh4YtEewUqBfYQ
+eQYAHwEeggeJ
+-----END PRIVATE KEY-----
+
+% dkim-key-fmt private.key prv pub
+
+% cat prv | sed -E 's/^(.{10}).*(.{10})$/\1...\2/'
+MIICWwIBAA...8BHoIHiQ==
+
+% cat pub | sed -E 's/^(.{30}).*(.{10})$/\1...\2/'
+"v=DKIM1; k=rsa; p=MIGfMA0GCSq...aZwIDAQAB"
+----
