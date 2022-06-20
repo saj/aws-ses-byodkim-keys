@@ -202,6 +202,9 @@ Private key input may be in PKCS#1 (ASN.1 `RSAPrivateKey` type, PEM `RSA PUBLIC 
 Example:
 
 ----
+% openssl version
+OpenSSL 3.0.3 3 May 2022 (Library: OpenSSL 3.0.3 3 May 2022)
+
 % openssl genrsa -f4 -out private.key 1024
 
 % echo -e '3,12d\n3a\n...\n.\n1,$p' | ed -s private.key
