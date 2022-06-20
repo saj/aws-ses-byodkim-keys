@@ -67,7 +67,7 @@ The `PRIVATE KEY` PEM block type is from PKCS#8 -- not from PKCS#1.  (PKCS#1 use
 * https://www.openssl.org/docs/man1.1.1/man1/openssl-genrsa.html[`openssl-genrsa(1)`] in OpenSSL 1.1.1 generated output in PKCS#1 format.
 * https://www.openssl.org/docs/man3.0/man1/openssl-genrsa.html[`openssl-genrsa(1)`] in OpenSSL 3.0 (and later) generated output in PKCS#8 format by default.
 
-Blind experimentation would suggest that AWS SES does, in fact, expect an RSA private key in PKCS#1 `RSAPublicKey` format.  Attempting to present an RSA private key in PKCS#8 `PrivateKeyInfo` format will result in a silent failure.
+Blind experimentation would suggest that AWS SES does, in fact, expect an RSA private key in PKCS#1 `RSAPrivateKey` format.  Attempting to present an RSA private key in PKCS#8 `PrivateKeyInfo` format will result in a silent failure.
 
 The DomainKeys Identified Mail (DKIM) specification (https://datatracker.ietf.org/doc/html/rfc4870[RFC 4870], https://datatracker.ietf.org/doc/html/rfc4871[4871], https://datatracker.ietf.org/doc/html/rfc6376[6376]) suffers from a similar problem.
 
@@ -197,7 +197,7 @@ All of these usability problems could be trivially resolved.  SES should accept 
 
 link:dkim-key-fmt/main.go[`dkim-key-fmt`] accepts an RSA private key in conventional PEM format and writes two output files:  the first is an alternative representation of the private key suitable for direct copy into the AWS SES BYODKIM user interface; the second is a representation of the public key suitable for direct copy to a `_domainkey` resource record.
 
-Private key input may be in PKCS#1 (`RSAPrivateKey`, PEM `RSA PUBLIC KEY`) or PKCS#8 (`PrivateKeyInfo`, PEM `PRIVATE KEY`) ASN.1 DER forms.
+Private key input may be in PKCS#1 (ASN.1 `RSAPrivateKey` type, PEM `RSA PUBLIC KEY` type) or PKCS#8 (ASN.1 `PrivateKeyInfo` type, PEM `PRIVATE KEY` type) ASN.1 DER forms.
 
 Example:
 
