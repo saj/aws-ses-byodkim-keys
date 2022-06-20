@@ -16,7 +16,7 @@ import (
 var prog = filepath.Base(os.Args[0])
 
 func usage() {
-	fmt.Fprintf(os.Stderr, "%s prv-in prv-out pub-out\n", prog)
+	fmt.Fprintf(os.Stderr, "usage: %s prv-in prv-out pub-out\n", prog)
 	fmt.Fprintf(os.Stderr, `
 prv-in is the filesystem path to an existing RSA private key in PEM format.
 
@@ -25,7 +25,7 @@ A new 1024-bit RSA private key may be generated with OpenSSL as follows:
     openssl genrsa -f4 -out private.key 1024
 
 The first PEM block is assumed to contain an RSA private key in PKCS#1 or PKCS#8
-ASN.1 DER form; any subsequent PEM blocks are silently ignored.
+ASN.1 DER form.  Subsequent PEM blocks, if any, are silently ignored.
 
 A formatted RSA private key is written to path prv-out.
 Output format is suitable for use with AWS SES.
