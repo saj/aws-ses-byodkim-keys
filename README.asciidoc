@@ -62,7 +62,7 @@ ____
 `-----BEGIN PRIVATE KEY----- and -----END PRIVATE KEY-----`
 ____
 
-The `PRIVATE KEY` PEM block type is from PKCS#8 -- not from PKCS#1.  (PKCS#1 used type `RSA PUBLIC KEY`.)  The underlying ASN.1 structures are not equivalent.  Further complicating matters is a change in OpenSSL behaviour:
+The `PRIVATE KEY` PEM block type is from PKCS#8 -- not from PKCS#1.  (PKCS#1 used type `RSA PRIVATE KEY`.)  The underlying ASN.1 structures are not equivalent.  Further complicating matters is a change in OpenSSL behaviour:
 
 * https://www.openssl.org/docs/man1.1.1/man1/openssl-genrsa.html[`openssl-genrsa(1)`] in OpenSSL 1.1.1 generated output in PKCS#1 format.
 * https://www.openssl.org/docs/man3.0/man1/openssl-genrsa.html[`openssl-genrsa(1)`] in OpenSSL 3.0 (and later) generated output in PKCS#8 format by default.
